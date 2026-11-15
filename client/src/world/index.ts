@@ -109,6 +109,8 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore, o: Cr
   };
 
   const overviewTarget = () => {
+    const phone = phoneOverview();
+    if (phone) return phone;
     const f = overviewFrame(buildingRect(), camera.viewW, camera.viewH, camera.insets);
     const fit = Math.max(camera.minZoom, f.zoom);
     const snapped = camera.snapZoom(fit, 'down');
@@ -117,6 +119,28 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore, o: Cr
     const c = camera.centerFor(f.cx, f.cy, z);
     // as margens de tela (pílulas acima, meio-fio abaixo) não são simétricas
     return { x: c.x, y: c.y - f.dy / z, zoom: z };
+  };
+
+  /**
+   * Fork: celular em pé. O prédio é largo e, inteiro na largura da tela, fica minúsculo: aqui ele ocupa ~50% da
+   * altura livre e começa nas salas das operações (as duas primeiras colunas são recepção, copa etc.); o resto se vê
+   * arrastando para o lado.
+   */
+  const phoneOverview = (): { x: number; y: number; zoom: number } | undefined => {
+    if (camera.viewW > 600 || camera.viewH <= camera.viewW) return undefined;
+    const b = buildingRect();
+    const freeH = Math.max(80, camera.viewH - camera.insets.top - camera.insets.bottom);
+    const freeW = Math.max(80, camera.viewW - camera.insets.left - camera.insets.right);
+    const fitW = (freeW - 16) / (b.w + TILE);
+    const want = Math.min(3, (freeH * 0.5) / (b.h + 3.5 * TILE));
+    if (want <= fitW) return undefined; // já cabe inteiro grande o bastante
+    const zoom = Math.max(camera.minZoom, camera.snapZoom(want, 'down') >= want * 0.85 ? camera.snapZoom(want, 'down') : want);
+    const half = freeW / 2 / zoom;
+    const start = 2 * COL_W * TILE - TILE / 2;
+    const cx = Math.max(b.x + half - TILE, Math.min(b.x + b.w - half + TILE, start + half));
+    const cy = b.y + (b.h + 2 * TILE) / 2 - TILE;
+    const c = camera.centerFor(cx, cy, zoom);
+    return { x: c.x, y: c.y, zoom };
   };
 
   const overview = (animate = true) => {

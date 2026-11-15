@@ -11440,3 +11440,32 @@ html.is-replay #world {
 @media (max-width: 600px) {
   body:has(.ui-chat:not([hidden])) .ui-toasts { display: none; }
 }
+
+/* Fork: celular — barra de cima numa linha só, com o que importa no telefone. */
+@media (max-width: 600px) {
+  .ui-topbar .ui-brand,
+  .ui-topbar .ui-btn-deliv,
+  .ui-topbar .ui-hist-btn,
+  .ui-topbar .ui-btn-spawn,
+  .ui-topbar button[title$='(M)'],
+  .ui-topbar button[title$='(?)'],
+  .ui-usage-card.is-empty { display: none !important; }
+  .ui-usage:has(.ui-usage-card.is-empty) { display: none !important; }
+  .ui-topbar .ui-btn-chat {
+    display: inline-flex;
+    flex-direction: row;
+    align-items: center;
+    width: auto;
+    padding: 0 12px 0 8px;
+    gap: 6px;
+    border-radius: 16px;
+    background: #00a884;
+    color: #0b141a;
+  }
+  .ui-topbar .ui-btn-chat::after { content: 'Conversas'; font: 600 13px system-ui, -apple-system, sans-serif; }
+  .ui-backup { display: inline-block; font-size: 0; padding: 4px 8px; margin-right: 2px; }
+  .ui-backup::first-letter { font-size: 15px; }
+}
+@media (max-width: 600px) {
+  .ui-root:has(.ui-usage-card.is-empty) { --top-h: 56px; }
+}
