@@ -17,7 +17,9 @@ const CODE = (env.CONFIG_CODE ?? '').trim();
 const PORT = Number(env.CONFIG_PORT ?? 4748);
 const HOST = env.CONFIG_HOST ?? '127.0.0.1';
 const ETC = env.CONFIG_ETC ?? '/etc/escritorio';
-const LOGIN_ENV = `${ETC}/login.env`;
+const LOGIN_ENV = env.CONFIG_LOGIN ?? `${ETC}/login.env`;
+// 'senha' = só o passo da senha (escritório no próprio PC, acesso pelo Tailscale): grava o login e sai.
+const MODE = env.CONFIG_MODE ?? 'nuvem';
 const READY = `${ETC}/pronto`;
 const REPO = env.CONFIG_REPO ?? 'secoondsz/escritorio-agentes';
 const ROOMS = env.CONFIG_ROOMS ?? '/home/escritorio/escritorio';
@@ -76,7 +78,7 @@ function send(res, status, html) {
 const hasLogin = () => existsSync(LOGIN_ENV);
 
 function stepPassword(code, error = '') {
-  return page('Escritório: primeiro acesso', `<div class="passo">Passo 1 de 2</div><h1>Crie o seu login</h1>
+  return page('Escritório: primeiro acesso', `${MODE === 'senha' ? '' : '<div class="passo">Passo 1 de 2</div>'}<h1>Crie o seu login</h1>
 <p>É com ele que você entra no escritório pelo celular ou por qualquer computador.</p>
 <form method="post" action="/senha"><input type="hidden" name="codigo" value="${esc(code)}">
 <label for="u">Usuário</label><input id="u" name="usuario" value="davi" autocomplete="username" required>
@@ -148,7 +150,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET') {
       const code = url.searchParams.get('codigo');
       if (!codeOk(code)) { if (code) failed(); return send(res, 403, page('Escritório', '<h1>Escritório em configuração</h1><p>Abra pelo link de configuração que veio junto com a instalação.</p>')); }
-      return send(res, 200, hasLogin() ? stepGithub(code) : stepPassword(code));
+      return send(res, 200, MODE === 'senha' || !hasLogin() ? stepPassword(code) : stepGithub(code));
     }
     if (req.method !== 'POST') return send(res, 405, page('Erro', '<h1>Método não permitido</h1>'));
     const form = await readForm(req);
@@ -163,6 +165,11 @@ const server = http.createServer(async (req, res) => {
       const hash = await hashPassword(a);
       mkdirSync(dirname(LOGIN_ENV), { recursive: true });
       writeFileSync(LOGIN_ENV, `HABBLAUD_REMOTE_USER=${user}\nHABBLAUD_REMOTE_PASSWORD_HASH=${hash}\n`, { mode: 0o600 });
+      if (MODE === 'senha') {
+        send(res, 200, page('Senha criada', '<h1>Senha criada!</h1><p>O escritório vai reiniciar sozinho para ligar o acesso pelo celular. Pode fechar esta página.</p>'));
+        setTimeout(() => { server.close(); process.exit(0); }, 1000);
+        return;
+      }
       return send(res, 200, stepGithub(code));
     }
     if (url.pathname === '/github') {
@@ -186,7 +193,7 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-if (existsSync(READY)) {
+if (MODE !== 'senha' && existsSync(READY)) {
   console.log('Escritório já configurado: nada a fazer.');
   process.exit(0);
 }
