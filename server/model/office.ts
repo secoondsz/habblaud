@@ -31,6 +31,7 @@ import { hash32 } from '../../shared/hash';
 import { applyPermission } from '../permissions/registry';
 import type { NameStore, StoredCharacter } from './names';
 import { normalizeCwd, roomDisplayNames, SlotAllocator } from './rooms';
+import { pathKey } from './room-aliases';
 import { tr } from '../../shared/i18n';
 import type { WorldMeta } from '../../shared/world/api';
 
@@ -54,8 +55,18 @@ const FEED_LIMIT = 200;
 
 export interface OfficeDeps {
   names: NameStore;
+  /**
+   * Fork: o agente fixo da sala (pasta), do "<!-- agente: Nome -->" do CLAUDE.md. Vira o personagem da sala: toda
+   * sessão aberta nela usa esse nome, mesmo que a conversa já tivesse outro.
+   */
+  roomAgent?: (path: string) => { name: string; look: 'f' | 'm' } | undefined;
   /** Nome escolhido pelo usuário para a sala da pasta (model/room-aliases.ts), se houver. */
   roomAlias?: (path: string) => string | undefined;
+  /**
+   * Fork: pastas das operações que viram salas fixas (model/room-filter.ts, createPinnedRooms). Ficam no prédio mesmo
+   * sem ninguém trabalhando; uma sessão aberta numa delas entra nessa sala.
+   */
+  pinnedRooms?: () => readonly string[];
   version: string;
   /** Build do cliente servido (ver OfficeSnapshot.meta.build); ausente no modo dev e nos testes. */
   build?: () => string | undefined;
@@ -322,7 +333,7 @@ export class Office {
       this.setStatus(p.id, p.status, p.waitingFor);
       return;
     }
-    const roomId = normalizeCwd(p.cwd);
+    const roomId = this.canonicalRoomId(normalizeCwd(p.cwd));
     this.ensureRoom(roomId, now);
     const chosen = this.roomCharacter(roomId, p.id, p.sessionId);
     // A mesma sessão retomada noutro processo (ex.: "Assumir aqui") mantém o nome, mesmo com o processo antigo
@@ -878,7 +889,9 @@ export class Office {
   private roomCharacter(roomId: string, id: string, sessionId: string): StoredCharacter | undefined {
     const c = this.deps.names.character(roomId);
     if (!c) return undefined;
-    if (c.owner !== undefined && c.owner !== sessionId && this.deps.names.get(sessionId)) return undefined;
+    // Sala fixa do escritório: o agente é sempre o dela, em qualquer conversa (fork).
+    const fixed = this.rooms.has(roomId) && this.pinnedKeys().has(pathKey(this.rooms.get(roomId)!.path));
+    if (!fixed && c.owner !== undefined && c.owner !== sessionId && this.deps.names.get(sessionId)) return undefined;
     if (this.nameConflict(c.name, id, roomId)) return undefined;
     this.deps.names.claimCharacter(roomId, sessionId);
     return c;
@@ -908,6 +921,7 @@ export class Office {
   /** Avança o demo e remove quem já cumpriu o período de graça. Chamar a cada ~250 ms. */
   tick(): void {
     const now = this.now();
+    this.syncPinnedRooms(now);
     if (this.demo) {
       const r = this.demo.tick(now);
       if (r.changed) {
@@ -930,7 +944,8 @@ export class Office {
     if (this.effects.prune(now)) this.markDirty();
     if (removed) {
       const occupied = new Set([...this.agents.values()].map((r) => r.info.roomId));
-      for (const id of [...this.rooms.keys()]) if (!occupied.has(id)) this.rooms.delete(id);
+      const pinned = this.pinnedKeys();
+      for (const [id, room] of [...this.rooms]) if (!occupied.has(id) && !pinned.has(pathKey(room.path))) this.rooms.delete(id);
       this.recomputeRoomNames();
       this.markDirty();
     }
@@ -1036,6 +1051,55 @@ export class Office {
       }
     }
     return out;
+  }
+
+  /** Fork: chaves (pathKey) das salas fixas agora. */
+  private pinnedKeys(): Set<string> {
+    return new Set((this.deps.pinnedRooms?.() ?? []).map(pathKey));
+  }
+
+  /** Fork: uma sessão numa pasta que já tem sala (fixa ou não) entra nela, mesmo com outra grafia do caminho. */
+  private canonicalRoomId(roomId: string): string {
+    if (this.rooms.has(roomId)) return roomId;
+    const k = pathKey(roomId);
+    for (const [id, room] of this.rooms) if (pathKey(room.path) === k) return id;
+    return roomId;
+  }
+
+  /**
+   * Fork: põe no prédio as salas fixas que ainda não estão lá e tira as que deixaram de ser fixas e estão vazias
+   * (a pasta foi apagada ou perdeu o CLAUDE.md).
+   */
+  private syncPinnedRooms(now: number): void {
+    if (!this.deps.pinnedRooms) return;
+    const pinned = this.deps.pinnedRooms();
+    const keys = new Set(pinned.map(pathKey));
+    let changed = false;
+    const have = new Set([...this.rooms.values()].map((r) => pathKey(r.path)));
+    for (const path of pinned) {
+      if (have.has(pathKey(path))) continue;
+      this.rooms.set(normalizeCwd(path), { path, createdAt: now });
+      have.add(pathKey(path));
+      changed = true;
+    }
+    const occupied = new Set([...this.agents.values()].map((r) => r.info.roomId));
+    for (const [id, room] of [...this.rooms]) {
+      if (occupied.has(id) || keys.has(pathKey(room.path))) continue;
+      this.rooms.delete(id);
+      changed = true;
+    }
+    // Agente fixo de cada sala: vira o personagem dela (uma vez; o editor do personagem continua valendo depois).
+    if (this.deps.roomAgent) {
+      for (const [id, room] of this.rooms) {
+        if (!keys.has(pathKey(room.path)) || this.deps.names.character(id)) continue;
+        const a = this.deps.roomAgent(room.path);
+        if (a) this.deps.names.setCharacter(id, { name: a.name, look: a.look, seed: hash32(`agente:${a.name}`) % 2_000_000_000 });
+      }
+    }
+    if (changed) {
+      this.recomputeRoomNames();
+      this.markDirty();
+    }
   }
 
   private ensureRoom(roomId: string, now: number): void {

@@ -9,6 +9,7 @@ import { parseAllowedHosts } from './http/guard';
 import { parseRemoteConfig, type RemoteConfig } from './http/remote';
 import { parseGithubRepo } from './updates/checker';
 import { tr } from '../shared/i18n';
+import { parseRoomFolders } from './model/room-filter';
 
 export interface ServerConfig {
   port: number;
@@ -22,6 +23,8 @@ export interface ServerConfig {
   home: string;
   /** Config dirs do Claude Code observados (um por conta). */
   claudeDirs: string[];
+  /** Pastas das salas visíveis (HABBLAUD_SALAS, model/room-filter.ts); vazio = todas as sessões entram. */
+  roomFolders: string[];
   /** Onde o Habblaud guarda o próprio estado (nomes persistidos). */
   dataDir: string;
   /**
@@ -238,6 +241,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, argv: string[] 
     inDocker,
     home,
     claudeDirs: discoverClaudeDirs(env, home),
+    roomFolders: parseRoomFolders(env.HABBLAUD_SALAS, home),
     dataDir: resolve(env.HABBLAUD_DATA_DIR?.trim() || (inDocker ? '/data' : join(home, '.habblaud'))),
     usageDir: resolve(env.HABBLAUD_USAGE_DIR?.trim() || join(home, '.habblaud', 'usage')),
     allowedHosts: parseAllowedHosts(env.HABBLAUD_ALLOWED_HOSTS),

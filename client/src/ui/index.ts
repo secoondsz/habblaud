@@ -31,6 +31,7 @@ import { SettingsPopover } from './settings';
 import { Sidebar } from './sidebar';
 import { SoundControl } from './sound';
 import { TERMINAL_UNAVAILABLE_HINT, TerminalPanel } from './terminal';
+import { BackupChip, ChatPanel } from './chat';
 import { PtyPanel } from './pty';
 import { TimelapsePlayer } from './timelapse';
 import { Toasts } from './toasts';
@@ -211,6 +212,11 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi,
     },
   };
   ctx.terminals = router;
+  // Chat em balões (fork secoondsz): conversas por sala, estilo WhatsApp.
+  const chat = new ChatPanel(ctx);
+  ctx.openChat = (agentId) => chat.show(agentId);
+  topbar.panelGroup.prepend(chat.button);
+  topbar.panelGroup.prepend(new BackupChip().el);
   // Entregas: o que os agentes terminaram (primeiro botão do grupo: é o que mais se usa pelo celular).
   const deliveries = new Deliveries(ctx, terminal);
   topbar.panelGroup.prepend(deliveries.button);
@@ -288,7 +294,7 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi,
   const scrim = h('div', { class: 'ui-scrim', attrs: { 'aria-hidden': 'true' }, on: { click: () => ctx.togglePanel('sidebar', false) } });
 
   root.classList.add('ui-root');
-  root.append(timelapse.vignette, topbar.el, sidebar.el, scrim, feed.el, drawer.el, terminal.el, pty.el, timelapse.el, timelapse.badge, toasts.el, banner.el, update.el, empty.el, popups.el, tip.el, settings.el, worldDialog.el, history.el, deliveries.el, help.el, renamer.el, live, splash.el);
+  root.append(timelapse.vignette, topbar.el, sidebar.el, scrim, feed.el, drawer.el, terminal.el, pty.el, chat.el, timelapse.el, timelapse.badge, toasts.el, banner.el, update.el, empty.el, popups.el, tip.el, settings.el, worldDialog.el, history.el, deliveries.el, help.el, renamer.el, live, splash.el);
   area = new FreeArea(world, { root, topbar: topbar.el, sidebar: sidebar.el, drawer: drawer.el, feed: feed.el }, () => ({
     sidebar: panels.sidebar,
     feed: panels.feed,
@@ -297,7 +303,7 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi,
   }));
   drawer.onLayoutChange = () => applyLayout();
 
-  const components: UiComponent[] = [topbar, sidebar, drawer, terminal, pty, history, deliveries, feed, toasts, settings, empty, banner, tip, notifier, splash, timelapse, sound, day, updateToaster, worldDialog, popups, worldChip];
+  const components: UiComponent[] = [topbar, sidebar, drawer, terminal, pty, chat, history, deliveries, feed, toasts, settings, empty, banner, tip, notifier, splash, timelapse, sound, day, updateToaster, worldDialog, popups, worldChip];
   if (scene) components.push(scene);
   root.append(worldSocial.el);
   components.push(worldSocial);
@@ -400,6 +406,9 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi,
       if (terminal.isOpen) {
         terminal.escape();
         e.preventDefault();
+      } else if (chat.isOpen) {
+        chat.close();
+        e.preventDefault();
       } else if (ctx.isNarrow() && panels.sidebar) {
         ctx.togglePanel('sidebar', false);
         e.preventDefault();
@@ -429,6 +438,12 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi,
       case 'T':
         e.preventDefault();
         toggleTerminal();
+        break;
+      case 'c':
+      case 'C':
+        e.preventDefault();
+        if (chat.isOpen) chat.close();
+        else chat.show(selection?.type === 'agent' ? selection.id : undefined);
         break;
       case 'l':
       case 'L':

@@ -23,10 +23,14 @@ function isLoopbackAddress(addr: string | undefined): boolean {
 }
 
 /** Motivo da recusa, ou null. */
-export function ptyRequestProblem(req: IncomingMessage): string | null {
-  if (!isLoopbackAddress(req.socket.remoteAddress)) return tr('o terminal interativo só pode ser usado no próprio computador');
+export function ptyRequestProblem(req: IncomingMessage, remote = false): string | null {
+  // remote = já passou pelo login da porta remota com 'pty' liberado (app.ts): aí o endereço e o Host não precisam ser
+  // locais (o proxy HTTPS da nuvem chega pelo loopback com o Host do domínio), mas a origem continua sendo conferida.
   const host = req.headers.host;
-  if (!isLoopbackHost(host)) return tr('abra o Habblaud por http://localhost para usar o terminal interativo');
+  if (!remote) {
+    if (!isLoopbackAddress(req.socket.remoteAddress)) return tr('o terminal interativo só pode ser usado no próprio computador');
+    if (!isLoopbackHost(host)) return tr('abra o Habblaud por http://localhost para usar o terminal interativo');
+  }
   const origin = req.headers.origin;
   if (typeof origin === 'string') {
     let same = false;
@@ -43,7 +47,7 @@ export function ptyRequestProblem(req: IncomingMessage): string | null {
   return null;
 }
 
-export function createPtyRoutes(ptys: PtyManager): (req: IncomingMessage, res: ServerResponse, path: string) => void {
+export function createPtyRoutes(ptys: PtyManager): (req: IncomingMessage, res: ServerResponse, path: string, remote?: boolean) => void {
   const fail = (res: ServerResponse, err: unknown) => {
     if (res.headersSent) return void res.destroy();
     if (err instanceof HttpError || err instanceof PtyError) sendJson(res, err.status, { error: err.message });
@@ -65,8 +69,8 @@ export function createPtyRoutes(ptys: PtyManager): (req: IncomingMessage, res: S
     }
   };
 
-  const handle = async (req: IncomingMessage, res: ServerResponse, path: string) => {
-    const problem = ptyRequestProblem(req);
+  const handle = async (req: IncomingMessage, res: ServerResponse, path: string, remote = false) => {
+    const problem = ptyRequestProblem(req, remote);
     if (problem) throw new HttpError(403, problem);
     const method = req.method ?? 'GET';
     const action = AGENT_ACTION_ROUTE.exec(path);
@@ -85,7 +89,7 @@ export function createPtyRoutes(ptys: PtyManager): (req: IncomingMessage, res: S
       if (method === 'GET') return sendJson(res, 200, { status: ptys.status(), ptys: ptys.list() });
       if (method !== 'POST') return notAllowed(res, 'GET, POST');
       const body = (await readJson(req)) as Record<string, unknown>;
-      return sendJson(res, 201, ptys.create({ cwd: body?.cwd, account: body?.account, cols: body?.cols, rows: body?.rows }));
+      return sendJson(res, 201, ptys.create({ cwd: body?.cwd, account: body?.account, cols: body?.cols, rows: body?.rows, resume: body?.resume, fresh: body?.fresh }));
     }
     const id = decode(rawId);
     if (act === 'stream') {
@@ -101,7 +105,7 @@ export function createPtyRoutes(ptys: PtyManager): (req: IncomingMessage, res: S
     noContent(res);
   };
 
-  return (req, res, path) => {
-    handle(req, res, path).catch((err) => fail(res, err));
+  return (req, res, path, remote) => {
+    handle(req, res, path, remote).catch((err) => fail(res, err));
   };
 }

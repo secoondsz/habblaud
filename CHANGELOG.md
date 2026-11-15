@@ -8,6 +8,22 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/), e
 [versionamento semântico](https://semver.org/lang/pt-BR/): correção sobe o último número (0.2.**1**), novidade sobe o
 do meio (0.**3**.0).
 
+## Não lançado (fork secoondsz)
+
+- **Agente fixo por sala** (`<!-- agente: Nome, f|m -->` no CLAUDE.md): toda conversa da sala usa esse personagem; "Conversar" retoma a última conversa da sala (`GET /api/chat/last`) em vez de abrir outra.
+- **Arquivo das conversas**: cada conversa das salas vira `<sala>/conversas/AAAA-MM-DD-<id>.md` (sala com `<!-- arquivo: nao -->` fica de fora; `HABBLAUD_ARQUIVO=0` desliga).
+- **Bastão entre salas**: arquivo em `<sala>/caixa-de-entrada/` é entregue ao agente da sala (abre a sala se preciso) e vai para `recebidas/`.
+- **Backup no GitHub** (`HABBLAUD_BACKUP_REPO`): a pasta das salas vira repositório git e sobe a cada 3 minutos, com `.gitignore` sem a sala Pedidos; aviso "☁ salvo" no topo (`GET /api/backup`).
+
+- **Chat em balões** (botão de balão no topo, atalho C, ou "Conversar" na gaveta do agente): conversas por sala estilo WhatsApp, com "digitando…", aprovar/recusar pedidos e fotos (clipe, Ctrl+V ou arrastar), gravadas em `anexos/AAAA-MM-DD/` dentro da sala. O chat é a própria sessão: digita no terminal interativo dela (comandos de barra, parar com Esc, trocar o modo com Shift+Tab), abre a sessão sozinho na sala vazia, lista e retoma conversas anteriores da sala (`POST /api/pty` aceita `resume`) e traz para o escritório a sessão aberta no app.
+
+- `HABBLAUD_SALAS`: o escritório pode mostrar só as sessões abertas dentro das pastas das operações; as outras conversas do Claude Code no computador ficam de fora.
+- A sala de uma operação usa o nome do `CLAUDE.md` (`# Operação: Tráfego pago` vira "Tráfego pago"), a não ser que você a renomeie.
+- **Salas fixas:** cada operação (subpasta de `HABBLAUD_SALAS` com `CLAUDE.md`) fica no prédio mesmo sem ninguém trabalhando; `<!-- ordem: N -->` no `CLAUDE.md` decide a posição. Uma sessão aberta na pasta entra na sala dela.
+- `HABBLAUD_CLAUDE_ARGS`: argumentos extras (ex.: `--chrome`) para o Claude Code aberto pelo botão Nova sessão.
+- **Escritório na nuvem** (`deploy/nuvem`): instalação automática num servidor Ubuntu (Node, Claude Code, Chrome sem janela para os agentes, HTTPS pelo Caddy em `<ip>.sslip.io`), página de primeiro acesso com código (login e chave de deploy do GitHub) e atualização toda madrugada. Na porta remota com login, `pty` em `HABBLAUD_REMOTE_ALLOW` libera o chat e o terminal; `HABBLAUD_REMOTE_BEHIND_HTTPS=1` marca o cookie como seguro atrás do proxy HTTPS.
+- **Chat no celular**: uma tela por vez (lista ou conversa), com "‹" para voltar.
+
 ## [Não lançado]
 
 ## [1.0.3] - 2026-10-16

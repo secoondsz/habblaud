@@ -29,9 +29,11 @@ import { parsePasswordHash, verifyPassword, type PasswordHash } from '../remote/
 import { hostAllowed } from './guard';
 import { getLocale, tr } from '../../shared/i18n';
 
-export type RemoteFeature = 'permissions' | 'messages' | 'terminal' | 'spawn';
+export type RemoteFeature = 'permissions' | 'messages' | 'terminal' | 'spawn' | 'pty';
 
-const FEATURES: readonly RemoteFeature[] = ['permissions', 'messages', 'terminal', 'spawn'];
+// Fork (nuvem): 'pty' libera o terminal interativo e o chat pela porta remota. Só faz sentido quando a máquina é um
+// servidor dedicado ao escritório e a porta remota fica atrás de HTTPS com login (deploy/nuvem).
+const FEATURES: readonly RemoteFeature[] = ['permissions', 'messages', 'terminal', 'spawn', 'pty'];
 
 export interface RemoteTls {
   dir: string;
@@ -50,6 +52,8 @@ export interface RemoteConfig {
   allow: ReadonlySet<RemoteFeature>;
   /** Ausente = HTTP puro (só com HABBLAUD_REMOTE_INSECURE_HTTP=1). */
   tls?: RemoteTls;
+  /** Fork (nuvem): atrás de um proxy HTTPS (HABBLAUD_REMOTE_BEHIND_HTTPS=1): cookie com Secure mesmo em HTTP puro. */
+  behindHttps?: boolean;
 }
 
 export const DEFAULT_REMOTE_PORT = 4748;
@@ -90,7 +94,11 @@ export function parseRemoteConfig(
   const port = inDocker ? DEFAULT_REMOTE_PORT : Number.isInteger(rawPort) && rawPort > 0 && rawPort < 65536 ? rawPort : DEFAULT_REMOTE_PORT;
   const host = inDocker ? '0.0.0.0' : env.HABBLAUD_REMOTE_HOST?.trim() || '0.0.0.0';
   return {
-    config: { port, host, user, passwordHash, passwordHashText: hashText, allow: parseAllow(env.HABBLAUD_REMOTE_ALLOW), tls: hasTls ? tls : undefined },
+    config: {
+      port, host, user, passwordHash, passwordHashText: hashText, allow: parseAllow(env.HABBLAUD_REMOTE_ALLOW), tls: hasTls ? tls : undefined,
+      // Fork (nuvem): HTTP puro só entre o proxy HTTPS (Caddy) e o Node, no loopback; o cookie sai com Secure.
+      behindHttps: truthy(env.HABBLAUD_REMOTE_BEHIND_HTTPS),
+    },
   };
 }
 
@@ -341,7 +349,7 @@ export function loginPage(opts: { caDownload: boolean }): string {
 <body>
 <form id="f" autocomplete="on">
   <h1>Habblaud</h1>
-  <p>${esc(tr('Acesso pelo celular. Entre com o usuário e a senha que você escolheu no npm run remote:setup.'))}</p>
+  <p>${esc(truthy(process.env.HABBLAUD_REMOTE_BEHIND_HTTPS) ? 'Escritório na nuvem. Entre com o usuário e a senha que você criou no primeiro acesso.' : tr('Acesso pelo celular. Entre com o usuário e a senha que você escolheu no npm run remote:setup.'))}</p>
   <label for="u">${esc(tr('Usuário'))}</label>
   <input id="u" name="username" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" required>
   <label for="p">${esc(tr('Senha'))}</label>

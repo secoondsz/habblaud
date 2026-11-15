@@ -364,3 +364,37 @@ describe('carregar o node-pty e achar o claude', () => {
     }),
   );
 });
+
+describe('PtyManager: salas fixas (fork)', () => {
+  it('abre a sala na última conversa dela e não abre uma segunda sessão', () => {
+    const room = mkdtempSync(join(tmpdir(), 'sala-'));
+    const s = setup({ roomSession: (cwd) => (cwd === room ? { account: 'acc', sessionId: SESSION } : undefined) });
+    const a = s.manager.create({ cwd: room });
+    expect(s.spawned[0].args).toContain('--resume');
+    expect(s.spawned[0].args).toContain(SESSION);
+    expect(a.resumed).toBe(SESSION);
+    const b = s.manager.create({ cwd: room });
+    expect(b.id).toBe(a.id);
+    expect(s.spawned).toHaveLength(1);
+  });
+
+  it('"Nova conversa" (fresh) abre do zero, e pasta que não é sala segue o original', () => {
+    const room = mkdtempSync(join(tmpdir(), 'sala-'));
+    const other = mkdtempSync(join(tmpdir(), 'outra-'));
+    const s = setup({ roomSession: (cwd) => (cwd === room ? { account: 'acc', sessionId: SESSION } : undefined) });
+    s.manager.create({ cwd: room, fresh: true });
+    expect(s.spawned[0].args).not.toContain('--resume');
+    s.manager.create({ cwd: other });
+    s.manager.create({ cwd: other });
+    expect(s.spawned).toHaveLength(3);
+  });
+
+  it('sala ainda sem conversa abre do zero, uma vez só', () => {
+    const room = mkdtempSync(join(tmpdir(), 'sala-'));
+    const s = setup({ roomSession: () => ({}) });
+    s.manager.create({ cwd: room });
+    s.manager.create({ cwd: room });
+    expect(s.spawned).toHaveLength(1);
+    expect(s.spawned[0].args).not.toContain('--resume');
+  });
+});

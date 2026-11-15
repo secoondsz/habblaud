@@ -34,6 +34,8 @@ export type HelpSection = 'usage' | 'codex';
 
 export interface UiContext {
   readonly store: OfficeStore;
+  /** Abre o chat em balões na conversa deste agente (fork secoondsz; ui/chat.ts). */
+  openChat?(agentId?: string): void;
   /** Janela de terminal (definida depois que os painéis existem). */
   terminals?: TerminalRouter;
   readonly world: WorldApi;

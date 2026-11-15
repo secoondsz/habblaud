@@ -213,6 +213,8 @@ class AgentView {
   private dot: HTMLElement;
   private statusText: HTMLElement;
   private statusSince: HTMLElement;
+  /** Fork: "Opus · pede permissão", no lugar da seção Estatísticas. */
+  private metaLine: HTMLElement;
   private followBtn: HTMLButtonElement;
   private termBtn: HTMLButtonElement;
   private termLabel: HTMLElement;
@@ -293,6 +295,7 @@ class AgentView {
     this.dot = createStatusDot();
     this.statusText = h('span', { class: 'ui-status__text' });
     this.statusSince = h('span', { class: 'ui-status__since' });
+    this.metaLine = h('p', { class: 'ui-agent-meta' });
     this.followBtn = h('button', { class: 'ui-btn', type: 'button', attrs: { 'aria-pressed': 'false' }, title: tr('Câmera acompanha o agente (F)'), on: { click: () => this.toggleFollow() } });
     this.followBtn.innerHTML = ICONS.follow;
     this.followBtn.append(h('span', { text: tr('Seguir') }));
@@ -400,7 +403,6 @@ class AgentView {
       ['duration', tr('Duração')],
       ['bg', tr('Execução')],
     ]);
-    const statsSec = section(tr('Estatísticas'), this.stats.el);
     this.codexHint = h('p', { class: 'ui-codex-hint', hidden: true }, ...richText(CODEX_LIVE_HINT));
 
     this.el = h(
@@ -411,19 +413,25 @@ class AgentView {
       this.title,
       this.gone,
       statusRow,
-      this.termBtn,
-      this.termWhy,
+      this.metaLine,
+      h(
+        'button',
+        { class: 'ui-btn ui-term-cta ui-chat-cta', type: 'button', on: { click: () => this.ctx.openChat?.(this.id || undefined) } },
+        h('span', { class: 'ui-term-cta__icon', attrs: { 'aria-hidden': 'true' } }, (() => { const t = document.createElement('template'); t.innerHTML = ICONS.chat; return t.content; })()),
+        h('span', { class: 'ui-term-cta__label', text: 'Conversar' }),
+        h('kbd', { class: 'ui-kbd', text: 'C', attrs: { 'aria-hidden': 'true' } }),
+      ),
+      // Fork: o terminal fica no menu ⋮ do chat (e no atalho T); a ficha mostra só o Conversar.
       this.alert,
       this.perm.el,
       this.shellBox,
       this.shellsSec.el,
       nowSec.el,
-      this.msgSec.el,
-      this.social.el,
+      // Fork: "Mandar mensagem" repetia o chat e a vida social é só enfeite: fora da ficha.
       this.tasksSec.el,
       this.teamSec.el,
       this.timelineSec.el,
-      statsSec.el,
+      // Fork: Estatísticas fora (o essencial, modelo e modo, fica na linha embaixo do status).
       this.codexHint,
     );
   }
@@ -747,6 +755,9 @@ class AgentView {
     // Codex: a política de aprovação (quando o servidor a manda) no lugar do modo de permissão do Claude Code.
     st.label('perm', codex ? tr('Aprovações') : tr('Permissões'));
     st.set('perm', a.kind !== 'main' ? null : codex ? (a.permissionMode ? codexApprovalLabel(a.permissionMode) : null) : permissionLabel(a.permissionMode));
+    const meta = [a.model ? prettyModel(a.model) : null, a.kind === 'main' && !codex && a.permissionMode ? permissionLabel(a.permissionMode) : null].filter(Boolean).join(' · ');
+    setText(this.metaLine, meta);
+    setHidden(this.metaLine, !meta);
 
     setText(this.sessionValue, a.sessionId);
     setTitle(this.sessionValue, a.sessionId);

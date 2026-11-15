@@ -71,8 +71,15 @@ export interface PtyManagerOptions {
   /** Por que o recurso está desligado (quando `spawn` é null). */
   disabledReason?: string;
   claudeBin: string;
+  /** Fork: argumentos extras para todo Claude Code aberto aqui (HABBLAUD_CLAUDE_ARGS, ex.: ["--chrome"]). */
+  claudeArgs?: readonly string[];
   accounts: () => PtyAccount[];
   agent: (id: string) => PtyAgentRef | undefined;
+  /**
+   * Fork (salas fixas): a conversa que a pasta deve continuar quando alguém abre uma sessão nela sem pedir uma do zero
+   * (`fresh`). Ausente ou undefined = abre do zero, como no Habblaud original.
+   */
+  roomSession?: (cwd: string) => { account?: string; sessionId?: string } | undefined;
   onChange: () => void;
   env?: NodeJS.ProcessEnv;
   now?: () => number;
@@ -222,8 +229,24 @@ export class PtyManager {
   }
 
   /** Abre uma sessão nova do Claude Code na pasta (`cwd` absoluto), na conta pedida (ou na padrão). */
-  create(p: { cwd: unknown; account?: unknown; cols?: unknown; rows?: unknown }): PtyInfo {
-    return this.spawn(this.plan(p, this.takeovers.size));
+  create(p: { cwd: unknown; account?: unknown; cols?: unknown; rows?: unknown; resume?: unknown; fresh?: unknown }): PtyInfo {
+    // Retomar uma conversa antiga da pasta (chat do fork): só um id de sessão (uuid) vira `--resume`.
+    let resume = typeof p.resume === 'string' && /^[0-9a-f-]{8,64}$/i.test(p.resume) ? p.resume : undefined;
+    const fresh = p.fresh === true;
+    if (!resume && !fresh && typeof p.cwd === 'string' && isAbsolute(p.cwd)) {
+      const cwd = resolve(p.cwd);
+      // Sala fixa que já tem uma sessão aberta aqui: devolve ela em vez de abrir outra (cliques repetidos).
+      const key = (x: string) => x.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+      const open = [...this.ptys.values()].find((t) => t.info.exitedAt === undefined && key(t.info.cwd) === key(cwd));
+      // undefined = não é sala fixa; {} = sala fixa ainda sem conversa.
+      const last = this.opts.roomSession?.(cwd);
+      if (last && open) return { ...open.info };
+      if (last?.sessionId) {
+        resume = last.sessionId;
+        if (p.account === undefined && last.account) p = { ...p, account: last.account };
+      }
+    }
+    return this.spawn(this.plan(p, this.takeovers.size), resume ? { resume } : {});
   }
 
   /**
@@ -403,7 +426,7 @@ export class PtyManager {
 
     let proc: PtyProcess;
     try {
-      const args = p.resume ? ['--resume', p.resume] : [];
+      const args = [...(this.opts.claudeArgs ?? []), ...(p.resume ? ['--resume', p.resume] : [])];
       proc = spawn(this.opts.claudeBin, args, { cwd, cols, rows, env });
     } catch (err) {
       throw new PtyError(500, tr('não consegui abrir o Claude Code: {0}', [errMsg(err)]));

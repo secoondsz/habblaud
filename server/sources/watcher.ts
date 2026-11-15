@@ -56,6 +56,8 @@ export interface WatcherOptions {
   isAlive?: (pid: number) => boolean;
   /** Desliga o fs.watch (testes). */
   watch?: boolean;
+  /** Só entram as sessões cuja pasta passa no filtro (HABBLAUD_SALAS, model/room-filter.ts). */
+  allowCwd?: (cwd: string) => boolean;
 }
 
 /** cwd -> nome da pasta em projects/ (todo caractere não alfanumérico vira "-"). */
@@ -277,6 +279,8 @@ export class ClaudeWatcher implements AgentSource {
       if (res.error) info.error = res.error;
       this.sourceInfo.set(acc.dir, info);
       for (const entry of res.entries) {
+        // Fora das pastas do escritório: nem entra (e, se estava, sai como sessão encerrada).
+        if (this.opts.allowCwd && !this.opts.allowCwd(entry.cwd)) continue;
         const key = `${acc.id}:${entry.pid}`;
         seen.add(key);
         try {

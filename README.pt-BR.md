@@ -714,6 +714,8 @@ Tudo funciona sem configurar nada. Se precisar ajustar, use variáveis de ambien
 | `HABBLAUD_HOST` | `127.0.0.1` | Interface do servidor no modo Node. Fora de `127.0.0.1`/`localhost`, o terminal (e responder e mandar mensagens pelo escritório) fica desligado. |
 | `HABBLAUD_BIND` | `127.0.0.1` | Só Docker (no `.env`): onde a porta é publicada. `0.0.0.0` libera a rede local (e desliga o terminal e o que age sobre as sessões). |
 | `HABBLAUD_CLAUDE_DIRS` | detecção automática | Pastas das contas, separadas por vírgula (ex.: `/caminho/conta1,/caminho/conta2`). |
+| `HABBLAUD_SALAS` | — | **(fork)** Pastas das operações, separadas por `;` (ex.: `~/Documents/escritorio`). Com ela, só entram no escritório as sessões abertas dentro dessas pastas; as demais conversas do Claude Code ficam de fora e respondem permissões no próprio terminal. A sala de uma pasta cujo `CLAUDE.md` começa com `# Operação: Nome` se chama `Nome`. Cada subpasta direta com `CLAUDE.md` vira uma **sala fixa**, que fica no prédio mesmo vazia; `<!-- ordem: N -->` no `CLAUDE.md` define a posição dela. |
+| `HABBLAUD_CLAUDE_ARGS` | — | **(fork)** Argumentos extras para o Claude Code aberto pelo escritório (Nova sessão), separados por espaço. Ex.: `--chrome` para os agentes usarem o navegador. |
 | `HABBLAUD_DATA_DIR` | `~/.habblaud` | Onde o Habblaud guarda os próprios dados (nomes dos personagens e das salas, linha do tempo do timelapse e estatísticas do Meu dia). |
 | `HABBLAUD_TIMELINE` | ligado | `0` desliga a gravação da linha do tempo (os dias já gravados continuam no timelapse). No Docker fica sempre ligado. |
 | `HABBLAUD_USAGE_DIR` | `~/.habblaud/usage` | Onde o mod (ou o tap de statusline) grava o uso. |

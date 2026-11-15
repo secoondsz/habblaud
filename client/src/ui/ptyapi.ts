@@ -28,8 +28,13 @@ export async function postPty<T = unknown>(url: string, body: unknown): Promise<
 const SIZE = { cols: 120, rows: 32 };
 
 /** Sessão nova do Claude Code na pasta (e conta) indicada. */
-export function createPty(cwd: string, account?: string): Promise<PtyInfo | undefined> {
-  return postPty<PtyInfo>('/api/pty', { cwd, account, ...SIZE });
+export function createPty(cwd: string, account?: string, resume?: string, fresh?: boolean): Promise<PtyInfo | undefined> {
+  return postPty<PtyInfo>('/api/pty', { cwd, account, resume, fresh, ...SIZE });
+}
+
+/** Digita no terminal interativo (o mesmo que apertar as teclas nele). */
+export async function ptyInput(id: string, data: string): Promise<void> {
+  await postPty(`/api/pty/${encodeURIComponent(id)}/input`, { data });
 }
 
 /** Encerra a sessão noutro terminal e continua a mesma conversa aqui. */

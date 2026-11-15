@@ -18,6 +18,7 @@ import { tr } from '../../shared/i18n';
 import type { SpawnService } from '../spawn/spawn';
 import { ATTACHMENT_BODY_MAX, parseAttachment, type AttachmentStore } from '../spawn/attachments';
 import type { SpawnFolder } from '../spawn/folders';
+import { readChatFile, saveChatFile } from '../chat/files';
 import { AUDIO_BODY_MAX, type DictationService } from '../dictation/dictation';
 import type { DeliveryIndex } from '../deliveries/deliveries';
 import type { FileFetcher } from '../deliveries/fetcher';
@@ -56,7 +57,7 @@ export interface ApiDeps {
    * Terminal interativo e ações nos agentes (/api/pty/*, POST /api/agents/:id/stop|takeover; http/pty.ts).
    * Ausente = desligado (sem HABBLAUD_PTY=1, Docker, sem node-pty ou sem bind local).
    */
-  pty?: (req: IncomingMessage, res: ServerResponse, path: string) => void;
+  pty?: (req: IncomingMessage, res: ServerResponse, path: string, remote?: boolean) => void;
   /**
    * Fonte do Codex ao vivo: recebe os eventos dos hooks do Codex (POST /api/codex/events, server/codex/http.ts). Sem
    * ela a rota responde {ok: false}. Só com Host local e, fora do Docker, conexão pelo loopback (os eventos só observam:
@@ -67,6 +68,10 @@ export interface ApiDeps {
   spawn?: SpawnService;
   /** Pastas sugeridas no "Novo agente" (GET /api/spawn/folders; spawn/folders.ts): projetos recentes. */
   spawnFolders?: () => Promise<SpawnFolder[]>;
+  /** Fork: a última conversa gravada na pasta da sala (GET /api/chat/last?room=), para "Conversar" retomar. */
+  chatLast?: (roomPath: string) => { account: string; sessionId: string } | undefined;
+  /** Fork: situação do backup no GitHub (GET /api/backup; backup/git.ts). */
+  backup?: () => unknown;
   /** Anexos do "Novo agente" (POST /api/spawn/attachments; spawn/attachments.ts). */
   attachments?: AttachmentStore;
   /** Ditado (/api/dictation e, para o auxiliar do host, /api/host/dictation/*; dictation/dictation.ts). */
@@ -372,8 +377,8 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
           remote,
           terminal: !!terminals && (!remote || trusted(req, 'terminal')),
           permissions: !!deps.permissions && (!remote || trusted(req, 'permissions')),
-          // O terminal interativo (pty) nunca vale pela porta remota.
-          pty: !!deps.pty && !remote,
+          // O terminal interativo (pty) pela porta remota só com 'pty' liberado (fork, nuvem).
+          pty: !!deps.pty && (!remote || trusted(req, 'pty')),
           messages: !!deps.messages && (!remote || trusted(req, 'messages')),
           codexEvents: !!deps.codexLive,
           updates: updatesSummary(deps.updates?.status()),
@@ -452,11 +457,12 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
       return true;
     }
     if (path === '/api/pty' || path.startsWith('/api/pty/') || AGENT_ACTION_ROUTE.test(path)) {
-      // Executa comandos na máquina: nunca pela porta remota, nem com login (o Host e o endereço de quem conecta não
-      // bastam: o Tailscale chega pelo loopback e o Host se imita).
-      if (isRemote(req)) sendJson(res, 403, { error: tr('o terminal interativo só pode ser usado no próprio computador') });
+      // Executa comandos na máquina: pela porta remota só com login e com 'pty' em HABBLAUD_REMOTE_ALLOW (fork, servidor
+      // na nuvem dedicado ao escritório). O Host e o endereço de quem conecta nunca bastam: o Tailscale chega pelo
+      // loopback e o Host se imita.
+      if (isRemote(req) && !trusted(req, 'pty')) sendJson(res, 403, { error: tr('o terminal interativo só pode ser usado no próprio computador') });
       else if (!deps.pty) sendJson(res, 403, { error: tr('terminal interativo desligado (veja o log do servidor)') });
-      else deps.pty(req, res, path);
+      else deps.pty(req, res, path, isRemote(req));
       return true;
     }
     const characterMatch = CHARACTER_ROUTE.exec(path);
@@ -629,6 +635,53 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
             sendJson(res, 200, { ok: true });
           })
           .catch((err) => fail(res, err));
+      }
+      return true;
+    }
+    if (path === '/api/backup') {
+      if (!isRead) methodNotAllowed(res, 'GET');
+      else sendJson(res, 200, deps.backup ? deps.backup() : { state: 'off' });
+      return true;
+    }
+    if (path === '/api/chat/last') {
+      if (!isRead) methodNotAllowed(res, 'GET');
+      else if (!trusted(req, 'messages')) sendJson(res, 403, { error: denied(req, tr('só pelo próprio computador')) });
+      else {
+        const room = office.roomPath(url.searchParams.get('room') ?? '');
+        const last = room && deps.chatLast ? deps.chatLast(room) : undefined;
+        sendJson(res, 200, last ? { account: last.account, sessionId: last.sessionId } : {});
+      }
+      return true;
+    }
+    if (path === '/api/chat/files' || path === '/api/chat/file') {
+      // Fotos do chat em balões (server/chat/files.ts): mesma trava das mensagens.
+      if (!deps.messages) sendJson(res, 403, { error: tr('mensagens pelo escritório desligadas') });
+      else if (!trusted(req, 'messages')) sendJson(res, 403, { error: denied(req, tr('fotos só pelo próprio computador (http://localhost)')) });
+      else if (path === '/api/chat/files') {
+        if (method !== 'POST') methodNotAllowed(res, 'POST');
+        else
+          readJson(req, ATTACHMENT_BODY_MAX)
+            .then((body) => {
+              const agentId = (body as { agentId?: unknown } | null)?.agentId;
+              const agent = typeof agentId === 'string' ? office.get(agentId) : undefined;
+              const room = agent && (office.roomPath(agent.roomId) ?? agent.roomId);
+              if (!agent || !room) return sendJson(res, 404, { error: tr('agente desconhecido: ele já saiu do escritório?') });
+              const a = parseAttachment(body);
+              if ('error' in a) return sendJson(res, 400, { error: a.error });
+              if (!/^image\//.test(a.type)) return sendJson(res, 400, { error: tr('só fotos (png, jpg, gif, webp)') });
+              sendJson(res, 201, { path: saveChatFile(room, a) });
+            })
+            .catch((err) => fail(res, err));
+      } else if (!isRead) methodNotAllowed(res, 'GET');
+      else {
+        const roomId = url.searchParams.get('room') ?? '';
+        const room = office.roomPath(roomId);
+        const file = room ? readChatFile(room, url.searchParams.get('p') ?? '') : null;
+        if (!file) sendJson(res, 404, { error: tr('foto não encontrada') });
+        else {
+          res.writeHead(200, { 'Content-Type': file.type, 'Content-Length': file.data.length, 'Cache-Control': 'private, max-age=3600', 'X-Content-Type-Options': 'nosniff' });
+          res.end(method === 'HEAD' ? undefined : file.data);
+        }
       }
       return true;
     }

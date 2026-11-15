@@ -21,6 +21,10 @@ import { errMsg, log } from './log';
 import { NameStore } from './model/names';
 import { Office } from './model/office';
 import { RoomAliases } from './model/room-aliases';
+import { createOperationNames, createPinnedRooms, createRoomAgents, makeRoomFilter } from './model/room-filter';
+import { ConversationArchive, lastRoomSession } from './chat/rooms';
+import { HandoffWatcher } from './chat/handoff';
+import { GitBackup } from './backup/git';
 import { createPtyRoutes } from './http/pty';
 import { claudeBinFrom, isExecutableFile, loadPty, PtyManager, type ScreenFactory, type SpawnPty } from './pty/manager';
 import { loadHeadlessScreen } from './pty/screen';
@@ -77,6 +81,11 @@ names.load();
 // Nomes de sala escolhidos pelo usuário (botão direito > Renomear).
 const roomAliases = new RoomAliases(join(config.dataDir, 'rooms.json'));
 roomAliases.load();
+// Fork: só as salas das pastas do escritório (HABBLAUD_SALAS) e o nome da operação tirado do CLAUDE.md.
+const roomFilter = makeRoomFilter(config.roomFolders);
+const operationName = createOperationNames();
+const pinnedRooms = createPinnedRooms(config.roomFolders);
+if (config.roomFolders.length) log.info(`Escritório: só as sessões dentro de ${config.roomFolders.join('; ')}`);
 
 // Office, contas e fontes de agentes se referenciam (avisos de mudança / fontes): ligação tardia.
 const late: { office?: Office; agents?: SourceSet; permissions?: PermissionRegistry; messages?: MessageRegistry; ptys?: PtyManager; ptyOff?: string } = {};
@@ -113,9 +122,12 @@ const accounts = new AccountsService({
   usageDir: config.usageDir,
   onChange: () => late.office?.markDirty(),
 });
+const roomAgents = createRoomAgents();
 const office = new Office({
   names,
-  roomAlias: (path) => roomAliases.get(path),
+  roomAgent: config.roomFolders.length ? roomAgents : undefined,
+  roomAlias: (path) => roomAliases.get(path) ?? operationName(path),
+  pinnedRooms: config.roomFolders.length ? pinnedRooms : undefined,
   version: config.version,
   // No modo dev o Vite serve o cliente direto do código-fonte: não há build para comparar.
   build: config.dev ? undefined : createBuildReader(config.rootDir),
@@ -133,7 +145,7 @@ const office = new Office({
 // Fontes de agentes, uma por ferramenta (sources/source.ts): a do Claude Code e, depois dela, a do Codex (quando há
 // pastas do Codex; HABBLAUD_CODEX=0 desliga), com o histórico dela no HistorySet abaixo e as contas registradas por
 // ela mesma (accounts.setProviderAccounts). `codex` também recebe os eventos dos hooks do Codex (CodexLive).
-const claude = new ClaudeWatcher({ accounts, office, inDocker: config.inDocker });
+const claude = new ClaudeWatcher({ accounts, office, inDocker: config.inDocker, allowCwd: roomFilter });
 const agents = new SourceSet([claude]);
 const codexDirs = config.codex ? discoverCodexDirs(process.env, config.home) : [];
 const codex = codexDirs.length ? new CodexSource({ accounts, office, dirs: codexDirs, env: process.env, home: config.home }) : undefined;
@@ -304,6 +316,8 @@ const ptys = spawnPty
   ? new PtyManager({
       spawn: spawnPty,
       claudeBin: claudeBin ?? 'claude',
+      // Fork: ex.: HABBLAUD_CLAUDE_ARGS="--chrome" para os agentes abertos pelo escritório usarem o navegador.
+      claudeArgs: (process.env.HABBLAUD_CLAUDE_ARGS ?? '').split(/\s+/).filter(Boolean),
       accounts: () => accounts.entries().map((a) => ({ id: a.id, dir: a.dir, isDefault: isDefaultDir(a.dir, config.home) })),
       agent: (id) => {
         const a = office.get(id);
@@ -311,6 +325,15 @@ const ptys = spawnPty
       },
       onChange: () => office.markDirty(),
       createScreen: ptyScreen,
+      // Fork: sala fixa abre sempre na última conversa dela (o chat pede `fresh` para "Nova conversa").
+      roomSession: config.roomFolders.length
+        ? (cwd) => {
+            const key = (x: string) => x.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+            if (!pinnedRooms().some((r) => key(r) === key(cwd))) return undefined;
+            const last = lastRoomSession(claudeDirs(), cwd);
+            return last ? { account: last.account, sessionId: last.sessionId } : {};
+          }
+        : undefined,
     })
   : undefined;
 late.ptys = ptys;
@@ -338,7 +361,46 @@ const ticker = setInterval(() => {
   }
 }, 250);
 
+// Fork: salas fixas — retomar a conversa da sala, arquivo das conversas, bastão entre salas e backup no GitHub.
+const claudeDirs = () => accounts.entriesOf('claude').map((a) => ({ account: a.id, dir: a.dir }));
+const roomPaths = () => (config.roomFolders.length ? pinnedRooms() : []);
+const roomLabel = (path: string) => {
+  const room = hub.current().rooms.find((r) => r.path === path);
+  return room?.name ?? operationName(path) ?? path.split(/[\\/]/).pop() ?? path;
+};
+const archive = new ConversationArchive({ rooms: roomPaths, dirs: claudeDirs, roomName: roomLabel });
+if (config.roomFolders.length && process.env.HABBLAUD_ARQUIVO !== '0') archive.start();
+const mainAgentIn = (path: string) => {
+  const key = path.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+  return office
+    .list()
+    .filter((a) => a.kind === 'main' && a.status !== 'offline' && a.status !== 'done' && (office.roomPath(a.roomId) ?? a.roomId).replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase() === key)
+    .sort((a, b) => Number(!!ptys?.list().find((p) => p.agentId === b.id && p.exitedAt === undefined)) - Number(!!ptys?.list().find((p) => p.agentId === a.id && p.exitedAt === undefined)))[0];
+};
+const handoff = ptys
+  ? new HandoffWatcher({
+      rooms: roomPaths,
+      agentOf: mainAgentIn,
+      ptyOf: (id) => ptys.list().find((p) => p.agentId === id && p.exitedAt === undefined),
+      open: (path) => {
+        const last = lastRoomSession(claudeDirs(), path);
+        ptys.create({ cwd: path, account: last?.account, resume: last?.sessionId, cols: 120, rows: 32 });
+      },
+      type: (id, data) => ptys.input(id, data),
+      roomName: roomLabel,
+    })
+  : undefined;
+if (handoff && config.roomFolders.length) handoff.start();
+const backupRepo = process.env.HABBLAUD_BACKUP_REPO?.trim();
+const backup = backupRepo && config.roomFolders.length === 1 ? new GitBackup({ root: config.roomFolders[0], repo: backupRepo }) : undefined;
+if (backup) {
+  backup.start();
+  log.info(`Backup: a pasta ${config.roomFolders[0]} sobe para ${backupRepo} a cada 5 minutos.`);
+}
+
 const api = createApiHandler({
+  chatLast: (path) => lastRoomSession(claudeDirs(), path),
+  backup: backup ? () => backup.status() : undefined,
   renameRoom: (id, name) => {
     const path = office.roomPath(id);
     if (!path) return undefined;
@@ -437,7 +499,7 @@ if (config.remote) {
   const gate = createRemoteGate({
     config: remote,
     sessions: new RemoteSessions(loadSecret(join(config.dataDir, 'remote-secret')), remote, Date.now, join(config.dataDir, 'remote-revoked.json')),
-    secure: !!remote.tls,
+    secure: !!remote.tls || !!remote.behindHttps,
     caFile: remote.tls?.caFile,
   });
   remoteListener = startRemoteListener(
@@ -460,7 +522,7 @@ if (config.remote) {
   remoteListener.server.once('listening', () => {
     const allow = [...remote.allow].join(', ') || tr('só ver');
     const where = config.inDocker ? tr('publicada pelo HABBLAUD_REMOTE_BIND') : remote.host;
-    const scheme = remote.tls ? 'HTTPS' : tr('HTTP SEM criptografia (HABBLAUD_REMOTE_INSECURE_HTTP)');
+    const scheme = remote.tls ? 'HTTPS' : remote.behindHttps ? tr('HTTP local atrás de um proxy HTTPS') : tr('HTTP SEM criptografia (HABBLAUD_REMOTE_INSECURE_HTTP)');
     log.info(tr('   Acesso remoto: ligado na porta {0} ({1}), {2}, com login; libera: {3}.', [remote.port, where, scheme, allow]));
     if (remote.allow.has('spawn') && !spawn) log.warn(tr('   Acesso remoto: "spawn" liberado, mas o Novo agente está desligado (ligue com HABBLAUD_PTY=1).'));
   });
