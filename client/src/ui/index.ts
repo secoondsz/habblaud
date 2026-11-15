@@ -31,7 +31,7 @@ import { SettingsPopover } from './settings';
 import { Sidebar } from './sidebar';
 import { SoundControl } from './sound';
 import { TERMINAL_UNAVAILABLE_HINT, TerminalPanel } from './terminal';
-import { BackupChip, ChatPanel } from './chat';
+import { BackupChip, ChatPanel, isPhone } from './chat';
 import { PtyPanel } from './pty';
 import { TimelapsePlayer } from './timelapse';
 import { Toasts } from './toasts';
@@ -215,6 +215,8 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi,
   // Chat em balões (fork secoondsz): conversas por sala, estilo WhatsApp.
   const chat = new ChatPanel(ctx);
   ctx.openChat = (agentId) => chat.show(agentId);
+  // Celular: abre direto nas conversas (o prédio fica no botão "Ver o escritório").
+  if (isPhone()) setTimeout(() => chat.show(), 0);
   topbar.panelGroup.prepend(chat.button);
   topbar.panelGroup.prepend(new BackupChip().el);
   // Entregas: o que os agentes terminaram (primeiro botão do grupo: é o que mais se usa pelo celular).

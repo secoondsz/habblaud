@@ -985,6 +985,8 @@ export class Office {
     for (const room of rooms) {
       const effect = this.effects.get(room.id, now) ?? this.demoSnap?.rooms.find((r) => r.id === room.id)?.effect;
       if (effect) room.effect = { ...effect };
+      const c = this.deps.roomAgent ? this.deps.names.character(room.id) : undefined;
+      if (c) room.agent = { name: c.name, look: c.look, seed: c.seed, ...(c.parts ? { parts: c.parts } : {}) };
     }
     const perms = this.deps.permissions?.();
     const real = [...this.agents.values()].map((r) => applyPermission(cloneAgent(r.info), perms?.get(r.info.id)));

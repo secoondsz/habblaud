@@ -133,6 +133,7 @@ export class ChatPanel implements UiComponent {
   private movable: Movable;
 
   private listEl: HTMLElement;
+  private sideSub: HTMLElement;
   private headAvatar: HTMLElement;
   private headName: HTMLElement;
   private headStatus: HTMLElement;
@@ -158,7 +159,15 @@ export class ChatPanel implements UiComponent {
     this.button = iconButton(ICONS.chat, 'Conversas (C)', () => this.toggle(), 'ui-btn-chat');
 
     this.listEl = h('div', { class: 'ui-chat__list', role: 'listbox', attrs: { 'aria-label': 'Conversas' } });
-    const side = h('aside', { class: 'ui-chat__side' }, h('div', { class: 'ui-chat__side-head', text: 'Conversas' }), this.listEl);
+    this.sideSub = h('small', { class: 'ui-chat__side-sub' });
+    // Celular: o chat é a tela principal; o prédio fica a um toque.
+    const office = h('button', { class: 'ui-chat__side-office', type: 'button', text: 'Ver o escritório', on: { click: () => this.close() } });
+    const side = h(
+      'aside',
+      { class: 'ui-chat__side' },
+      h('div', { class: 'ui-chat__side-head' }, h('div', { class: 'ui-chat__side-title' }, h('strong', { text: 'Conversas' }), this.sideSub), office),
+      this.listEl,
+    );
 
     this.headAvatar = h('span', { class: 'ui-chat__head-avatar' });
     this.headName = h('strong', { class: 'ui-chat__head-name' });
@@ -198,7 +207,7 @@ export class ChatPanel implements UiComponent {
       this.fileInput.value = '';
     });
     const clip = iconButton(ICONS.attach, 'Mandar foto (ou cole com Ctrl+V)', () => this.fileInput.click(), 'ui-chat__clip');
-    this.box = h('textarea', { class: 'ui-chat__input', attrs: { rows: 1, maxlength: MESSAGE_MAX, placeholder: 'Mensagem  ( / para comandos )', enterkeyhint: 'send' } });
+    this.box = h('textarea', { class: 'ui-chat__input', attrs: { rows: 1, maxlength: MESSAGE_MAX, placeholder: isPhone() ? 'Mensagem' : 'Mensagem  ( / para comandos )', enterkeyhint: 'send' } });
     this.box.addEventListener('input', () => {
       if (this.roomId) this.textDrafts.set(this.roomId, this.box.value);
       this.resize();
@@ -286,10 +295,11 @@ export class ChatPanel implements UiComponent {
     const agent = agentId ? this.ctx.agent(agentId) : undefined;
     const main = agent?.kind === 'sub' ? this.ctx.agent(agent.parentId ?? '') : agent;
     const room = main?.roomId ?? this.roomId ?? this.rooms()[0]?.id ?? null;
+    this.el.classList.toggle('ui-chat--list', !main && isPhone());
     this.listSig = '';
     if (room) this.selectRoom(room, true);
     this.render();
-    setTimeout(() => this.box.focus(), 50);
+    if (!isPhone()) setTimeout(() => this.box.focus(), 50);
   }
 
   close(): void {
@@ -509,6 +519,9 @@ export class ChatPanel implements UiComponent {
 
   private paintList(): void {
     const rooms = this.rooms();
+    const live = rooms.filter((r) => this.mainOf(r.id)).length;
+    const busy = rooms.filter((r) => presence(this.mainOf(r.id)).tone === 'typing').length;
+    setText(this.sideSub, `${rooms.length} ${rooms.length === 1 ? 'sala' : 'salas'} · ${live} ${live === 1 ? 'agente ligado' : 'agentes ligados'}${busy ? ` · ${busy} trabalhando` : ''}`);
     const sig = rooms
       .map((r) => {
         const a = this.mainOf(r.id);
@@ -521,7 +534,9 @@ export class ChatPanel implements UiComponent {
       ...rooms.map((r) => {
         const a = this.mainOf(r.id);
         const pres = presence(a);
-        const avatar = a ? createAvatar(a, 'sm') : createAvatarPlaceholder('sm');
+        const face = a ?? roomFace(r);
+        const avatar = face ? createAvatar(face, 'md') : createAvatarPlaceholder('md');
+        const who = a?.name ?? r.agent?.name;
         const sub = a ? (pres.tone === 'online' ? this.previews.get(r.id) || 'online' : pres.text) : 'descansando · toque para conversar';
         return h(
           'button',
@@ -538,7 +553,12 @@ export class ChatPanel implements UiComponent {
             },
           },
           avatar,
-          h('span', { class: 'ui-chat__contact-txt' }, h('strong', { text: r.name }), h('small', { text: a ? `${a.name} · ${sub}` : sub })),
+          h(
+            'span',
+            { class: 'ui-chat__contact-txt' },
+            h('span', { class: 'ui-chat__contact-top' }, h('strong', { text: who ?? r.name }), who ? h('em', { text: r.name }) : null),
+            h('small', { text: sub }),
+          ),
           a?.permission ? h('span', { class: 'ui-chat__badge', text: '!' }) : null,
         );
       }),
@@ -663,14 +683,16 @@ export class ChatPanel implements UiComponent {
     const starting = this.starting.has(this.roomId ?? '');
 
     this.paintList();
-    setText(this.headName, room ? `${room.name}${agent ? ` · ${agent.name}` : ''}` : 'Conversas');
+    const who = agent?.name ?? room?.agent?.name;
+    setText(this.headName, room ? (who ? `${who} · ${room.name}` : room.name) : 'Conversas');
     const pres = presence(agent);
     setText(this.headStatus, agent ? pres.text : starting ? 'voltando…' : 'descansando');
     this.headStatus.className = `ui-chat__head-status is-${agent ? pres.tone : starting ? 'typing' : 'off'}`;
-    const avKey = agent?.id ?? '';
+    const face = agent ?? (room ? roomFace(room) : undefined);
+    const avKey = agent?.id ?? (face ? `sala:${room?.id}` : '');
     if (this.headAvatar.dataset.key !== avKey) {
       this.headAvatar.dataset.key = avKey;
-      this.headAvatar.replaceChildren(agent ? createAvatar(agent, 'md') : createAvatarPlaceholder('md'));
+      this.headAvatar.replaceChildren(face ? createAvatar(face, 'md') : createAvatarPlaceholder('md'));
     }
     const typing = (!!agent && pres.tone === 'typing' && !agent.permission) || starting;
     if (this.typing.hidden === typing) {
@@ -1063,4 +1085,15 @@ export class BackupChip {
     this.el.className = `ui-backup is-${st.state}`;
     this.el.title = st.state === 'error' ? `Backup no GitHub: ${st.error ?? 'erro'}` : `Tudo do escritório vai para ${st.repo ?? 'o GitHub'} a cada 3 minutos`;
   }
+}
+
+/** Celular (tela estreita): o chat vira a tela inteira, uma tela por vez. */
+export function isPhone(): boolean {
+  return typeof matchMedia === 'function' && matchMedia('(max-width: 600px)').matches;
+}
+
+/** Rosto do agente fixo da sala (mesmo descansando). */
+function roomFace(room: RoomInfo): { seed: number; look: 'f' | 'm'; kind: 'main'; parts?: AgentInfo['parts'] } | undefined {
+  const a = room.agent;
+  return a ? { seed: a.seed, look: a.look, kind: 'main', ...(a.parts ? { parts: a.parts } : {}) } : undefined;
 }

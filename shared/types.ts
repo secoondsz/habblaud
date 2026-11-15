@@ -207,6 +207,16 @@ export interface RoomInfo {
   createdAt: number;
   /** Efeito visual temporário na sala (eventos do GitHub detectados nos transcripts; ver shared/github.ts). */
   effect?: RoomEffect;
+  /** Fork: personagem fixo da sala (agente da sala), para o chat mostrar o rosto mesmo sem ninguém trabalhando. */
+  agent?: RoomAgentInfo;
+}
+
+/** Fork: aparência do agente fixo de uma sala (`<!-- agente: Nome, f|m -->`). */
+export interface RoomAgentInfo {
+  name: string;
+  look: 'f' | 'm';
+  seed: number;
+  parts?: AgentInfo['parts'];
 }
 
 /**

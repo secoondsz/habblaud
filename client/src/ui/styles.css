@@ -11374,11 +11374,69 @@ html.is-replay #world {
 .ui-agent-meta[hidden] { display: none; }
 .ui-chat__mode:disabled { opacity: 0.45; cursor: not-allowed; }
 
-/* Fork: chat no celular, uma tela por vez (lista ou conversa), como no WhatsApp. */
-.ui-chat__back { display: none; font-size: 22px; line-height: 1; }
+/* Fork: cabeçalho da lista de conversas. */
+.ui-chat__side-head { display: flex; align-items: center; gap: 10px; }
+.ui-chat__side-title { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.ui-chat__side-title strong { font-size: 19px; font-weight: 700; }
+.ui-chat__side-sub { font-size: 12px; font-weight: 400; color: #8696a0; margin-top: 2px; }
+.ui-chat__side-office { display: none; }
+.ui-chat__contact-top { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.ui-chat__contact-top strong { white-space: nowrap; }
+.ui-chat__contact-top em { font-style: normal; font-size: 12.5px; color: #8696a0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ui-chat__contact .ui-avatar { overflow: hidden; }
+
+/* Fork: chat no celular — tela inteira, uma tela por vez (lista ou conversa), como no WhatsApp. */
+.ui-chat__back { display: none; font-size: 26px; line-height: 1; }
 @media (max-width: 600px) {
-  .ui-chat__back { display: inline-flex; }
+  .ui-chat {
+    z-index: 900;
+    inset: 0 !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    height: 100dvh !important;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    font-size: 15.5px;
+  }
+  .ui-chat__back { display: inline-flex; margin-right: -6px; }
   .ui-chat .ui-chat__side { display: none; }
-  .ui-chat.ui-chat--list .ui-chat__side { display: flex; width: 100%; max-width: none; }
+  .ui-chat.ui-chat--list .ui-chat__side { display: flex; width: 100%; max-width: none; border-right: 0; }
   .ui-chat.ui-chat--list .ui-chat__main { display: none; }
+  .ui-chat .ui-term__max, .ui-chat__bar .ui-icon-btn[title^='Fechar'] { display: none; }
+
+  .ui-chat__side-head {
+    padding: calc(14px + env(safe-area-inset-top)) 16px 14px;
+    background: #202c33;
+  }
+  .ui-chat__side-title strong { font-size: 22px; }
+  .ui-chat__side-office {
+    display: inline-flex; align-items: center; padding: 8px 12px; border-radius: 18px; border: 1px solid rgba(134, 150, 160, 0.35);
+    background: transparent; color: #e9edef; font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap;
+  }
+  .ui-chat__list { padding-bottom: env(safe-area-inset-bottom); }
+  .ui-chat__contact { padding: 12px 16px; gap: 14px; min-height: 72px; }
+  .ui-chat__contact .ui-avatar { width: 52px; height: 52px; }
+  .ui-chat__contact .ui-avatar img { transform: scale(1.45); transform-origin: 50% 100%; }
+  .ui-chat__head-avatar .ui-avatar { width: 40px; height: 40px; }
+  .ui-chat__head-avatar .ui-avatar img { transform: scale(1.15); transform-origin: 50% 100%; }
+  .ui-chat__contact-top strong { font-size: 17px; }
+  .ui-chat__contact-txt small { font-size: 14px; margin-top: 2px; }
+  .ui-chat__contact.is-off { opacity: 1; }
+  .ui-chat__contact.is-off .ui-avatar { filter: grayscale(0.6); opacity: 0.75; }
+  .ui-chat__contact.is-on { background: transparent; }
+
+  .ui-chat__bar { padding: calc(6px + env(safe-area-inset-top)) 8px 6px 4px; min-height: 60px; gap: 10px; }
+  .ui-chat__head-name { font-size: 17px; }
+  .ui-chat__scroll { padding: 12px 10px 8px; }
+  .ui-chat__bubble { max-width: 84%; font-size: 15.5px; }
+  .ui-chat__composer { padding-bottom: calc(6px + env(safe-area-inset-bottom)); }
+  .ui-chat__input { font-size: 16px; }
+}
+
+/* Chat aberto no celular: avisos do canto não cobrem a conversa. */
+@media (max-width: 600px) {
+  body:has(.ui-chat:not([hidden])) .ui-toasts { display: none; }
 }
