@@ -24,6 +24,7 @@ import {
   pendingArrived,
   presence,
   preview,
+  messageImages,
   ptyTyping,
   samePath,
   slashMatches,
@@ -449,6 +450,8 @@ export class ChatPanel implements UiComponent {
     for (const src of list) {
       const img = h('img', { class: 'ui-chat__photo', attrs: { src, alt: 'foto', loading: 'lazy' } });
       img.addEventListener('click', () => window.open(src, '_blank', 'noopener'));
+      // Arquivo que não existe (ou fora da sala): some, em vez de mostrar a imagem quebrada.
+      img.addEventListener('error', () => img.remove());
       box.append(img);
     }
     return box;
@@ -469,7 +472,9 @@ export class ChatPanel implements UiComponent {
     if (it.type === 'agent') {
       const text = h('div', { class: 'ui-chat__text ui-chat__md' });
       text.append(chatMarkdown(it.text));
-      return h('div', { class: 'ui-chat__row ui-chat__row--agent' }, h('div', { class: 'ui-chat__bubble ui-chat__bubble--agent' }, text, h('div', { class: 'ui-chat__meta' }, time)));
+      // Print ou foto que o agente cita na resposta (arquivo dentro da sala): aparece aqui mesmo.
+      const pics = this.photosEl(messageImages(it.text, this.room()?.path ?? ''));
+      return h('div', { class: 'ui-chat__row ui-chat__row--agent' }, h('div', { class: 'ui-chat__bubble ui-chat__bubble--agent' }, text, pics, h('div', { class: 'ui-chat__meta' }, time)));
     }
     if (it.type === 'work') {
       const open = this.expanded.has(it.id);

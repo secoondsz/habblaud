@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { TerminalEntry } from '../../../shared/types';
-import { chatItems, chatMessage, pendingArrived, presence, splitPhotos, toolLabel, workText } from './chat-model';
+import { chatItems, chatMessage, messageImages, pendingArrived, presence, splitPhotos, toolLabel, workText } from './chat-model';
 
 describe('chat-model', () => {
   it('monta a mensagem com as fotos e separa de volta', () => {
@@ -46,6 +46,14 @@ describe('chat-model', () => {
     // Uma mensagem antiga que só contém o texto não conta.
     expect(pendingArrived('entendeu?', 9000, items)).toBe(false);
     expect(pendingArrived('pode mudar isso\n📎 Foto anexada: anexos/d/c.png', 4000, items)).toBe(false);
+  });
+
+  it('acha as imagens que o agente cita, só dentro da sala', () => {
+    const room = 'C:\\Users\\davis\\Documents\\escritorio\\trafego-pago';
+    expect(messageImages('O print está em `campanhas/2026-11-18-cortina-erro-publicacao.jpeg`. Quem resolve', room)).toEqual(['campanhas/2026-11-18-cortina-erro-publicacao.jpeg']);
+    expect(messageImages('veja ![erro](./prints/a.png) e C:\\Users\\davis\\Documents\\escritorio\\trafego-pago\\.playwright-mcp\\shot-1.png.', room)).toEqual(['prints/a.png', '.playwright-mcp/shot-1.png']);
+    expect(messageImages('fora: `../criativos/x.png` e C:\\outra\\y.jpg e `C:/Users/davis/Documents/escritorio/trafego-pago/a b.png`', room)).toEqual(['a b.png']);
+    expect(messageImages('nenhuma imagem aqui, só arquivo.md', room)).toEqual([]);
   });
 
   it('presença estilo WhatsApp', () => {

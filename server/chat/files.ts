@@ -3,8 +3,11 @@
 // mensagem leva o caminho relativo numa linha "📎 Foto anexada: anexos/...", que o chat troca pela miniatura.
 //
 //   POST /api/chat/files   {agentId, name, type?, data (base64)}  201 {path}
-//   GET  /api/chat/file?room=<roomId>&p=<anexos/...>             a imagem (só imagens, só dentro de anexos/)
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+//   GET  /api/chat/file?room=<roomId>&p=<caminho>                 a imagem (só imagens, só dentro da pasta da sala)
+//
+// O GET também mostra no chat as imagens que o agente cita na resposta (um print salvo em campanhas/, por exemplo):
+// qualquer imagem dentro da pasta da sala, nunca fora dela (nem por link simbólico).
+import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { extname, join, resolve, sep } from 'node:path';
 import type { Attachment } from '../spawn/attachments';
 
@@ -45,16 +48,20 @@ export function saveChatFile(roomPath: string, a: Attachment, now = new Date()):
   return `${folder}/${file}`;
 }
 
-/** Lê uma foto do chat: só caminhos relativos dentro de <sala>/anexos/ e só imagens. */
+/** Imagem maior que isto não vai para o chat. */
+const READ_MAX = 25 * 1024 * 1024;
+
+/** Lê uma imagem da sala para o chat: só caminhos relativos dentro da pasta da sala e só imagens. */
 export function readChatFile(roomPath: string, rel: string): { data: Buffer; type: string } | null {
   if (!rel || rel.includes('\0') || /^[\\/]|^[a-z]:/i.test(rel)) return null;
-  const root = resolve(roomPath, CHAT_DIR);
-  const full = resolve(roomPath, ...rel.split(/[\\/]/));
-  if (!full.startsWith(root + sep)) return null;
-  const type = IMAGE_TYPES[extname(full).toLowerCase()];
+  const type = IMAGE_TYPES[extname(rel).toLowerCase()];
   if (!type) return null;
   try {
-    if (!statSync(full).isFile()) return null;
+    const root = realpathSync(resolve(roomPath));
+    const full = realpathSync(resolve(roomPath, ...rel.split(/[\\/]/)));
+    if (!full.startsWith(root + sep)) return null;
+    const st = statSync(full);
+    if (!st.isFile() || st.size > READ_MAX) return null;
     return { data: readFileSync(full), type };
   } catch {
     return null;

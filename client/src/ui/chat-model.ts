@@ -163,6 +163,32 @@ export function pendingArrived(sentText: string, sentAt: number, items: readonly
   });
 }
 
+const IMAGE_REF = /(?:[A-Za-z]:)?[\w.\-\\/~À-ÿ ]*?[\w\-À-ÿ]\.(?:png|jpe?g|gif|webp)(?=$|[\s`)\]"'*,;:!?.>])/gi;
+
+/**
+ * Imagens que o agente cita na resposta ("o print está em `campanhas/erro.jpeg`", `![](x.png)`, ou o caminho
+ * completo dentro da sala): caminhos relativos à pasta da sala, para o chat mostrar a foto. Fora da sala, ignora.
+ */
+export function messageImages(text: string, roomPath: string): string[] {
+  const root = roomPath.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+  const out: string[] = [];
+  // Só o que está entre crases, entre parênteses de link/imagem markdown ou numa palavra sozinha (sem espaços).
+  const chunks = [...text.matchAll(/`([^`\n]+)`|\]\(([^)\s]+)\)|(\S+)/g)].map((m) => m[1] ?? m[2] ?? m[3]);
+  for (const chunk of chunks) {
+    for (const m of chunk.matchAll(IMAGE_REF)) {
+      let p = m[0].trim().replace(/\\/g, '/').replace(/^\.\//, '');
+      if (/^[a-z]:\//i.test(p) || p.startsWith('/')) {
+        if (!root || !p.toLowerCase().startsWith(`${root}/`)) continue;
+        p = p.slice(root.length + 1);
+      }
+      if (!p || p.startsWith('../') || p.includes('/../')) continue;
+      if (!out.includes(p)) out.push(p);
+      if (out.length >= 6) return out;
+    }
+  }
+  return out;
+}
+
 export type ChatSegment = { kind: 'md'; text: string } | { kind: 'table'; rows: string[][] };
 
 const TABLE_SEP = /^\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/;

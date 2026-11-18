@@ -10,6 +10,7 @@ do meio (0.**3**.0).
 
 ## Não lançado (fork secoondsz)
 
+- **Chat: o print que o agente cita aparece na conversa.** Caminho de imagem dentro da pasta da sala na resposta (`campanhas/erro.jpeg`, `![](x.png)` ou o caminho completo) vira a foto no balão; `GET /api/chat/file` passa a servir qualquer imagem da sala (nunca de fora dela).
 - **Chat: sua mensagem não fica mais presa embaixo da resposta.** Mensagem mandada enquanto o agente trabalhava (que o Claude Code junta com a seguinte numa só, embrulhada em `<pasted_content>`) agora é reconhecida quando chega; o embrulho some da conversa e do arquivo das conversas.
 - **Agente fixo por sala** (`<!-- agente: Nome, f|m -->` no CLAUDE.md): toda conversa da sala usa esse personagem; "Conversar" retoma a última conversa da sala (`GET /api/chat/last`) em vez de abrir outra.
 - **Arquivo das conversas**: cada conversa das salas vira `<sala>/conversas/AAAA-MM-DD-<id>.md` (sala com `<!-- arquivo: nao -->` fica de fora; `HABBLAUD_ARQUIVO=0` desliga).

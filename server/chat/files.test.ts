@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -15,7 +15,15 @@ describe('fotos do chat', () => {
     expect(readChatFile(room, 'anexos/2026-11-15/print.png')?.type).toBe('image/png');
   });
 
-  it('não lê fora de anexos/ nem arquivos que não são imagem', () => {
+  it('lê imagens de qualquer pasta da sala (print citado pelo agente)', () => {
+    const room = mkdtempSync(join(tmpdir(), 'sala-'));
+    mkdirSync(join(room, 'campanhas'));
+    writeFileSync(join(room, 'campanhas', 'erro.jpeg'), 'x');
+    expect(readChatFile(room, 'campanhas/erro.jpeg')?.type).toBe('image/jpeg');
+    expect(readChatFile(room, 'campanhas\\erro.jpeg')?.type).toBe('image/jpeg');
+  });
+
+  it('não lê fora da sala nem arquivos que não são imagem', () => {
     const room = mkdtempSync(join(tmpdir(), 'sala-'));
     saveChatFile(room, { name: 'a.png', type: 'image/png', data: Buffer.from('x') });
     expect(readChatFile(room, '../CLAUDE.md')).toBeNull();
