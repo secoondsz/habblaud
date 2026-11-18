@@ -37,6 +37,17 @@ describe('chat-model', () => {
     expect(pendingArrived('outra coisa', 900, items)).toBe(false);
   });
 
+  it('reconhece mensagens que esperaram na fila e entraram juntas (bug do Tiago, 18/11)', () => {
+    const foto = 'pode mudar isso\n📎 Foto anexada: anexos/d/a.png\n📎 Foto anexada: anexos/d/b.png';
+    const junto = `<pasted_content id="8a46">\n${foto}\n</pasted_content id="8a46">\n\nentendeu?`;
+    const items = chatItems([{ kind: 'user', id: 'u', at: 5000, text: junto }]);
+    expect(pendingArrived(foto, 4000, items)).toBe(true);
+    expect(pendingArrived('entendeu?', 4500, items)).toBe(true);
+    // Uma mensagem antiga que só contém o texto não conta.
+    expect(pendingArrived('entendeu?', 9000, items)).toBe(false);
+    expect(pendingArrived('pode mudar isso\n📎 Foto anexada: anexos/d/c.png', 4000, items)).toBe(false);
+  });
+
   it('presença estilo WhatsApp', () => {
     expect(presence(undefined).text).toBe('conversa encerrada');
     expect(presence({ status: 'working', activity: { text: 'Lendo criterios.md' } } as never).text).toBe('lendo criterios.md…');

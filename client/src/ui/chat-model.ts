@@ -150,15 +150,17 @@ export function preview(items: readonly ChatItem[]): string {
 
 /** A mensagem pendente (ainda não está no transcript) já apareceu na conversa? */
 export function pendingArrived(sentText: string, sentAt: number, items: readonly ChatItem[]): boolean {
+  const norm = (s: string) => s.replace(/<\/?pasted_content\b[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
   const want = splitPhotos(sentText);
-  const key = want.text.replace(/\s+/g, ' ').trim().slice(0, 80);
-  return items.some(
-    (it) =>
-      it.type === 'me' &&
-      it.at >= sentAt - 60_000 &&
-      it.text.replace(/\s+/g, ' ').trim().slice(0, 80) === key &&
-      it.photos.length === want.photos.length,
-  );
+  const key = norm(want.text).slice(0, 80);
+  return items.some((it) => {
+    if (it.type !== 'me' || it.at < sentAt - 60_000) return false;
+    const got = norm(it.text);
+    if (got.slice(0, 80) === key && it.photos.length === want.photos.length) return true;
+    // Mensagem mandada enquanto o agente trabalhava: o Claude Code junta as que esperaram na fila numa só.
+    // Vale se a sua aparece dentro dela, com as mesmas fotos, e foi gravada depois de você mandar.
+    return it.at >= sentAt - 2_000 && !!key && got.includes(key) && want.photos.every((p) => it.photos.includes(p));
+  });
 }
 
 export type ChatSegment = { kind: 'md'; text: string } | { kind: 'table'; rows: string[][] };

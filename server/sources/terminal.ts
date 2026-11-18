@@ -456,7 +456,9 @@ class Parser implements TerminalParser {
   // ---------------------------------------------------------------- entradas
 
   private userEntry(c: Ctx, raw: string): void {
-    const text = marked(prepare(raw, TEXT_MAX));
+    // Texto colado (ou mensagens que esperaram na fila e entraram juntas) vem embrulhado em
+    // <pasted_content id="…">…</pasted_content id="…">: a mensagem é o que está dentro.
+    const text = marked(prepare(unwrapPasted(raw), TEXT_MAX));
     if (text) this.emit({ kind: 'user', id: `${c.uuid}:u`, at: c.at, text });
   }
 
@@ -770,4 +772,9 @@ class Parser implements TerminalParser {
 /** Parser com estado: uma instância por leitura de arquivo, alimentada linha a linha, na ordem do arquivo. */
 export function createTerminalParser(): TerminalParser {
   return new Parser();
+}
+
+/** Tira as marcas <pasted_content id="…"> e </pasted_content …> que o Claude Code põe em volta do texto colado. */
+export function unwrapPasted(raw: string): string {
+  return raw.replace(/<\/?pasted_content\b[^>]*>[ \t]*\r?\n?/g, '').replace(/\n{3,}/g, '\n\n').trim();
 }

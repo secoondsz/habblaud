@@ -33,6 +33,11 @@ function userBlocks(blocks: Array<Record<string, unknown>>, at = T0): string {
 }
 
 describe('terminal — prompts do usuário', () => {
+  it('tira o embrulho <pasted_content> do texto colado e das mensagens que entraram juntas da fila', () => {
+    const e = run([L.prompt('<pasted_content id="8a46">\nmuda isso\n📎 Foto anexada: anexos/d/a.png\n</pasted_content id="8a46">\n\nentendeu?', { at: T0 })]);
+    expect(only(e, 'user')[0].text).toBe('muda isso\n📎 Foto anexada: anexos/d/a.png\n\nentendeu?');
+  });
+
   it('prompt vira user; meta e lembretes de sistema somem; at vem do timestamp', () => {
     const e = run([
       L.meta('Caveat: mensagens locais'),
